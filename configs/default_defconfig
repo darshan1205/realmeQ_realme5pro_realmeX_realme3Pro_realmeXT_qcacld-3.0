@@ -66,7 +66,11 @@ ifeq ($(CONFIG_ARCH_MSM8917), y)
 	endif
 endif
 
-ifeq ($(CONFIG_ARCH_QCS405), y)
+ifeq (y,$(findstring y,$(CONFIG_ARCH_QCS405) $(CONFIG_ARCH_QCS403)))
+	CONFIG_ARCH_QCS40X := y
+endif
+
+ifeq ($(CONFIG_ARCH_QCS40X), y)
 	CONFIG_WLAN_SYNC_TSF_PLUS := y
 	CONFIG_WLAN_SYNC_TSF_PLUS_NOIRQ := y
 	CONFIG_RX_PERFORMANCE := y
@@ -100,7 +104,7 @@ CONFIG_QCACLD_FEATURE_COEX_CONFIG := y
 endif
 
 #Flag to enable get hw capability
-ifeq ($(CONFIG_ARCH_QCS405), y)
+ifeq ($(CONFIG_ARCH_QCS40X), y)
 CONFIG_QCACLD_FEATURE_HW_CAPABILITY := y
 endif
 
@@ -230,7 +234,7 @@ ifeq ($(CONFIG_ROME_IF), snoc)
 	CONFIG_WLAN_TX_FLOW_CONTROL_V2 := y
 endif
 
-ifeq ($(CONFIG_ARCH_QCS405), y)
+ifeq ($(CONFIG_ARCH_QCS40X), y)
 CONFIG_WLAN_TX_FLOW_CONTROL_V2 := n
 # Flag to improve TCP TX throughput for both
 # CONFIG_WLAN_TX_FLOW_CONTROL_LEGACY and CONFIG_WLAN_TX_FLOW_CONTROL_V2
@@ -328,6 +332,11 @@ ifneq ($(TARGET_BUILD_VARIANT),user)
 	CONFIG_WLAN_DEBUG_CRASH_INJECT := y
 endif
 
+#ifdef VENDOR_EDIT
+#Tao.Hui@PSW.CN.WiFi.Basic.Custom.1884719 2019/03/08
+    CONFIG_WLAN_DEBUG_CRASH_INJECT := y
+#endif
+
 #Enable WLAN/Power debugfs feature only if debug_fs is enabled
 ifeq ($(CONFIG_DEBUG_FS), y)
        # Flag to enable debugfs. Depends on CONFIG_DEBUG_FS in kernel
@@ -421,8 +430,8 @@ CONFIG_WLAN_OPEN_P2P_INTERFACE := y
 CONFIG_WLAN_ENABLE_SOCIAL_CHANNELS_5G_ONLY := y
 endif
 
-#enable 4addr support for QCS405
-ifeq ($(CONFIG_ARCH_QCS405), y)
+#enable 4addr support for QCS40X
+ifeq ($(CONFIG_ARCH_QCS40X), y)
 CONFIG_FEATURE_WLAN_STA_4ADDR_SCHEME := y
 endif
 

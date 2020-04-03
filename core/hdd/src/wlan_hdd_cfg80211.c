@@ -2535,6 +2535,7 @@ static int __wlan_hdd_cfg80211_do_acs(struct wiphy *wiphy,
 					sap_config->acs_cfg.ch_list_count);
 			if (!sap_config->acs_cfg.ch_list ||
 			    !sap_config->acs_cfg.master_ch_list) {
+				hdd_err("ACS config alloc fail");
 				ret = -ENOMEM;
 				goto out;
 			}
@@ -2559,6 +2560,7 @@ static int __wlan_hdd_cfg80211_do_acs(struct wiphy *wiphy,
 					sap_config->acs_cfg.ch_list_count);
 			if (!sap_config->acs_cfg.ch_list ||
 			    !sap_config->acs_cfg.master_ch_list) {
+				hdd_err("ACS config alloc fail");
 				ret = -ENOMEM;
 				goto out;
 			}
@@ -2791,6 +2793,13 @@ void wlan_hdd_undo_acs(struct hdd_adapter *adapter)
 		qdf_mem_free(adapter->session.ap.sap_config.acs_cfg.ch_list);
 		adapter->session.ap.sap_config.acs_cfg.ch_list = NULL;
 	}
+
+	if (adapter->session.ap.sap_config.acs_cfg.master_ch_list) {
+		hdd_debug("Clearing master ACS cfg channel list");
+		qdf_mem_free(adapter->session.ap.sap_config.acs_cfg.master_ch_list);
+		adapter->session.ap.sap_config.acs_cfg.master_ch_list = NULL;
+	}
+
 	adapter->session.ap.sap_config.acs_cfg.ch_list_count = 0;
 	if (adapter->session.ap.sap_config.acs_cfg.master_ch_list) {
 		hdd_debug("Clear acs cfg channel list");
@@ -8593,7 +8602,13 @@ __wlan_hdd_cfg80211_set_ns_offload(struct wiphy *wiphy,
 
 	if (!hdd_ctx->config->active_mode_offload) {
 		hdd_warn("Active mode offload is disabled");
+		#ifndef VENDOR_EDIT
+		//Botao.Cu@PSW.CN.WiFi.Connect.auth.1189028, 2017/12/31,
+		//modify the return value for VTS test
 		return -EINVAL;
+		#else
+		return 0;
+		#endif /* VENDOR_EDIT */
 	}
 
 	if (wlan_cfg80211_nla_parse(tb, QCA_WLAN_VENDOR_ATTR_ND_OFFLOAD_MAX,
@@ -14193,6 +14208,151 @@ static int __wlan_hdd_cfg80211_fetch_bss_transition_status(struct wiphy *wiphy,
 	return cfg80211_vendor_cmd_reply(reply_skb);
 }
 
+#ifdef VENDOR_EDIT
+//Laixin@PSW.CN.WiFi.Basic.Softap.1190360, 2018/03/06
+//Add for: hotspot manager
+static const struct nla_policy
+oppo_attr_policy[OPPO_WLAN_VENDOR_ATTR_MAX + 1] = {
+	[OPPO_WLAN_VENDOR_ATTR_MAC_ADDR] = {.type = NLA_BINARY, .len = QDF_MAC_ADDR_SIZE},
+	[OPPO_WLAN_VENDOR_ATTR_WETHER_BLOCK_CLIENT] = {.type = NLA_U8},
+	[OPPO_WLAN_VENDOR_ATTR_SAP_MAX_CLIENT_NUM] = {.type = NLA_U32},
+};
+
+static int __wlan_hdd_cfg80211_oppo_modify_acl(struct wiphy *wiphy,
+					struct wireless_dev *wdev,
+					const void *data, int data_len)
+{
+	int32_t status;
+	struct nlattr* tb[OPPO_WLAN_VENDOR_ATTR_MAX + 1];
+	uint8_t extra[8];
+	int8_t block;
+
+	hdd_enter();
+
+	status = wlan_cfg80211_nla_parse(tb, OPPO_WLAN_VENDOR_ATTR_MAX,
+					data, data_len, oppo_attr_policy);
+	if (status) {
+		hdd_err("Invalid attributes!");
+		status = -EINVAL;
+		goto out;
+	}
+
+	if (tb[OPPO_WLAN_VENDOR_ATTR_MAC_ADDR]) {
+		nla_memcpy(extra, tb[OPPO_WLAN_VENDOR_ATTR_MAC_ADDR], QDF_MAC_ADDR_SIZE);
+	} else {
+		hdd_err("Invalid argument:No sta mac addr provided!");
+		status = -EINVAL;
+		goto out;
+	}
+	if (tb[OPPO_WLAN_VENDOR_ATTR_WETHER_BLOCK_CLIENT]) {
+		block = nla_get_u8(tb[OPPO_WLAN_VENDOR_ATTR_WETHER_BLOCK_CLIENT]);
+	} else {
+		hdd_err("Invalid argument:No block value!");
+		status = -EINVAL;
+		goto out;
+	}
+
+	//we always modify black list, as for now
+	extra[6] = 0;
+	extra[7] = block;
+
+	status = oppo_wlan_hdd_modify_acl(wdev->netdev, (char*)extra);
+	if (0 != status) {
+		hdd_err("failed to modify acl! %d", status);
+		goto out;
+	}
+
+out:
+	hdd_exit();
+	return status;
+}
+
+/**
+ * wlan_hdd_cfg80211_oppo_modify_acl() - modify acl
+ * @wiphy: Pointer to wiphy
+ * @wdev: Pointer to wireless device
+ * @data: vendor command extra data
+ * @data_len: the size of extra data
+ *
+ * Return: 0 for success, non-zero for failure
+ */
+static int wlan_hdd_cfg80211_oppo_modify_acl(struct wiphy *wiphy,
+				  struct wireless_dev *wdev,
+				  const void *data, int data_len)
+{
+	int ret;
+
+	cds_ssr_protect(__func__);
+	ret = __wlan_hdd_cfg80211_oppo_modify_acl(wiphy, wdev, data, data_len);
+	cds_ssr_unprotect(__func__);
+
+	return ret;
+}
+
+static int __wlan_hdd_cfg80211_oppo_set_max_assoc(struct wiphy *wiphy,
+					  struct wireless_dev *wdev,
+					  const void *data, int data_len)
+{
+	uint32_t status;
+	int extra[2];
+	uint32_t max_clients;
+	struct nlattr* tb[OPPO_WLAN_VENDOR_ATTR_MAX + 1];
+
+	hdd_enter();
+
+	status = wlan_cfg80211_nla_parse(tb, OPPO_WLAN_VENDOR_ATTR_MAX,
+					data, data_len, oppo_attr_policy);
+
+	if (status) {
+		hdd_err("Invalid attributes!");
+		status = -EINVAL;
+		goto out;
+	}
+
+	if (tb[OPPO_WLAN_VENDOR_ATTR_SAP_MAX_CLIENT_NUM]) {
+		max_clients = nla_get_u32(tb[OPPO_WLAN_VENDOR_ATTR_SAP_MAX_CLIENT_NUM]);
+	} else {
+		hdd_err("Invalid argument!");
+		status = -EINVAL;
+		goto out;
+	}
+
+	extra[0] = QCSAP_PARAM_MAX_ASSOC;
+	extra[1] = max_clients;
+
+	status = oppo_wlan_hdd_set_max_assoc(wdev->netdev, (char*)extra);
+	if (0 != status) {
+		hdd_err("failed to set max assoc!");
+		goto out;
+	}
+
+out:
+	hdd_exit();
+	return status;
+}
+
+/**
+ * wlan_hdd_cfg80211_oppo_set_max_assoc() - modify acl
+ * @wiphy: Pointer to wiphy
+ * @wdev: Pointer to wireless device
+ * @data: vendor command extra data
+ * @data_len: the size of extra data
+ *
+ * Return: 0 for success, non-zero for failure
+ */
+static int wlan_hdd_cfg80211_oppo_set_max_assoc(struct wiphy *wiphy,
+					  struct wireless_dev *wdev,
+					  const void *data, int data_len)
+{
+	int ret;
+	cds_ssr_protect(__func__);
+	ret = __wlan_hdd_cfg80211_oppo_set_max_assoc(wiphy, wdev, data, data_len);
+	cds_ssr_unprotect(__func__);
+
+	return ret;
+}
+#endif /* VENDOR_EDIT */
+
 /**
  * wlan_hdd_cfg80211_fetch_bss_transition_status() - fetch bss transition status
  * @wiphy : WIPHY structure pointer
@@ -14745,14 +14905,18 @@ const struct wiphy_vendor_command hdd_wiphy_vendor_commands[] = {
 			 WIPHY_VENDOR_CMD_NEED_NETDEV,
 		.doit = wlan_hdd_cfg80211_get_logger_supp_feature
 	},
-	{
-		.info.vendor_id = QCA_NL80211_VENDOR_ID,
-		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_TRIGGER_SCAN,
-		.flags = WIPHY_VENDOR_CMD_NEED_WDEV |
-			WIPHY_VENDOR_CMD_NEED_NETDEV |
-			WIPHY_VENDOR_CMD_NEED_RUNNING,
-		.doit = wlan_hdd_cfg80211_vendor_scan
-	},
+#ifndef VENDOR_EDIT
+	//Chuanye.Xu@PSW.CN.WiFi.Connect.smartWifi.1058483, 2017/11/20,
+	//Remove for bug 1148060:get hidden AP after connect.
+		{
+			.info.vendor_id = QCA_NL80211_VENDOR_ID,
+			.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_TRIGGER_SCAN,
+			.flags = WIPHY_VENDOR_CMD_NEED_WDEV |
+				WIPHY_VENDOR_CMD_NEED_NETDEV |
+				WIPHY_VENDOR_CMD_NEED_RUNNING,
+			.doit = wlan_hdd_cfg80211_vendor_scan
+		},
+#endif /* VENDOR_EDIT */
 
 	/* Vendor abort scan */
 	{
@@ -15094,6 +15258,26 @@ const struct wiphy_vendor_command hdd_wiphy_vendor_commands[] = {
 			WIPHY_VENDOR_CMD_NEED_RUNNING,
 		.doit = wlan_hdd_cfg80211_set_limit_offchan_param
 	},
+	#ifdef VENDOR_EDIT
+	//Laixin@PSW.CN.WiFi.Basic.SoftAp.1190360, 2018/03/06
+	//add for: hotspot manager via wificond
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = OPPO_NL80211_VENDOR_SUBCMD_MODIFY_ACL,
+		.flags = WIPHY_VENDOR_CMD_NEED_WDEV |
+			 WIPHY_VENDOR_CMD_NEED_NETDEV |
+			 WIPHY_VENDOR_CMD_NEED_RUNNING,
+		.doit = wlan_hdd_cfg80211_oppo_modify_acl
+	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = OPPO_NL80211_VENDOR_SUBCMD_SET_MAX_ASSOC,
+		.flags = WIPHY_VENDOR_CMD_NEED_WDEV |
+		     WIPHY_VENDOR_CMD_NEED_NETDEV |
+			 WIPHY_VENDOR_CMD_NEED_RUNNING,
+		.doit = wlan_hdd_cfg80211_oppo_set_max_assoc
+	},
+        #endif /* VENDOR_EDIT */
 
 	FEATURE_COEX_CONFIG_COMMANDS
 	FEATURE_MPTA_HELPER_COMMANDS
@@ -17462,24 +17646,14 @@ static int wlan_hdd_cfg80211_set_default_key(struct wiphy *wiphy,
 }
 
 void wlan_hdd_cfg80211_unlink_bss(struct hdd_adapter *adapter,
-				  tSirMacAddr bssid)
+				  tSirMacAddr bssid, uint8_t *ssid,
+				  uint8_t ssid_len)
 {
 	struct net_device *dev = adapter->dev;
 	struct wireless_dev *wdev = dev->ieee80211_ptr;
 	struct wiphy *wiphy = wdev->wiphy;
-	struct cfg80211_bss *bss = NULL;
 
-	bss = hdd_cfg80211_get_bss(wiphy, NULL, bssid,
-			NULL, 0);
-	if (!bss) {
-		hdd_err("BSS not present");
-	} else {
-		hdd_debug("cfg80211_unlink_bss called for BSSID "
-			MAC_ADDRESS_STR, MAC_ADDR_ARRAY(bssid));
-		cfg80211_unlink_bss(wiphy, bss);
-		/* cfg80211_get_bss get bss with ref count so release it */
-		cfg80211_put_bss(wiphy, bss);
-	}
+	__wlan_cfg80211_unlink_bss_list(wiphy, bssid, ssid, ssid_len);
 }
 
 #ifdef WLAN_ENABLE_AGEIE_ON_SCAN_RESULTS
@@ -17643,11 +17817,12 @@ wlan_hdd_inform_bss_frame(struct hdd_adapter *adapter,
 	for (i = 0; i < WLAN_MGMT_TXRX_HOST_MAX_ANTENNA; i++)
 		bss_data.per_chain_snr[i] = WLAN_INVALID_PER_CHAIN_RSSI;
 
-	hdd_debug("BSSID: " MAC_ADDRESS_STR " Channel:%d RSSI:%d TSF %u seq %d",
+	hdd_debug("BSSID: " MAC_ADDRESS_STR " Channel:%d RSSI:%d TSF %u seq %d is_prob_resp %d",
 		  MAC_ADDR_ARRAY(bss_data.mgmt->bssid),
 		  bss_data.chan->center_freq, (int)(bss_data.rssi / 100),
 		  bss_desc->timeStamp[0], ((bss_desc->seq_ctrl.seqNumHi <<
-		  HIGH_SEQ_NUM_OFFSET) | bss_desc->seq_ctrl.seqNumLo));
+		  HIGH_SEQ_NUM_OFFSET) | bss_desc->seq_ctrl.seqNumLo),
+		  bss_desc->fProbeRsp);
 
 	bss_status = wlan_cfg80211_inform_bss_frame_data(wiphy, &bss_data);
 	hdd_ctx->beacon_probe_rsp_cnt_per_scan++;

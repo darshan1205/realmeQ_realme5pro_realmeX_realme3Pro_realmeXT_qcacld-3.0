@@ -132,7 +132,13 @@ static inline void wlan_hdd_clear_link_layer_stats(struct hdd_adapter *adapter) 
 #endif
 
 #define MAX_CHANNEL (NUM_24GHZ_CHANNELS + NUM_5GHZ_CHANNELS)
+#ifndef VENDOR_EDIT
+//Chuanye.Xu@PSW.CN.Wifi.Connect.Scan.1234999, 2018/02/22,
+//Modify for scan more hidden AP
 #define MAX_SCAN_SSID 10
+#else /* VENDOR_EDIT */
+#define MAX_SCAN_SSID 16
+#endif /* VENDOR_EDIT */
 
 #define IS_CHANNEL_VALID(channel) ((channel >= 0 && channel < 15) \
 			|| (channel >= 36 && channel <= 184))
@@ -384,11 +390,14 @@ void hdd_rssi_threshold_breached(void *hddctx,
  * interface that BSS might have been lost.
  * @adapter: adapter
  * @bssid: bssid which might have been lost
+ * @ssid: SSID
+ * @ssid_len: length of the SSID
  *
  * Return: void
  */
 void wlan_hdd_cfg80211_unlink_bss(struct hdd_adapter *adapter,
-				  tSirMacAddr bssid);
+				  tSirMacAddr bssid, uint8_t *ssid,
+				  uint8_t ssid_len);
 
 void wlan_hdd_cfg80211_acs_ch_select_evt(struct hdd_adapter *adapter);
 

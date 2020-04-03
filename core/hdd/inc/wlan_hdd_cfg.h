@@ -1563,7 +1563,13 @@ enum hdd_dot11_mode {
 #define CFG_GLOBAL_ADAPTIVE_DWELL_MODE_NAME       "global_adapt_dwelltime_mode"
 #define CFG_GLOBAL_ADAPTIVE_DWELL_MODE_MIN        (0)
 #define CFG_GLOBAL_ADAPTIVE_DWELL_MODE_MAX        (4)
+#ifndef VENDOR_EDIT
+//Liqun.Zhang@PSW.CN.WiFi.Connect.Scan.1212303, 2018/1/22,
+//Modify for close scan adaptive
 #define CFG_GLOBAL_ADAPTIVE_DWELL_MODE_DEFAULT    (0)
+#else
+#define CFG_GLOBAL_ADAPTIVE_DWELL_MODE_DEFAULT    (1)
+#endif /* VENDOR_EDIT */
 
 /*
  * <ini>
@@ -7332,7 +7338,13 @@ enum hdd_link_speed_rpt_type {
 #define CFG_SAP_MAX_NO_PEERS                       "gSoftApMaxPeers"
 #define CFG_SAP_MAX_NO_PEERS_MIN                   (1)
 #define CFG_SAP_MAX_NO_PEERS_MAX                   (SIR_SAP_MAX_NUM_PEERS)
+#ifdef VENDOR_EDIT
+//Jian.Wang@PSW.CN.WiFi.Basic.custom.1047595, 2017/11/15,
+//Modify for set default SoftAP client count to 8
+#define CFG_SAP_MAX_NO_PEERS_DEFAULT               (10)
+#else
 #define CFG_SAP_MAX_NO_PEERS_DEFAULT               (SIR_SAP_MAX_NUM_PEERS)
+#endif /* VENDOR_EDIT */
 
 /*
  * <ini>
@@ -8264,7 +8276,17 @@ enum hdd_link_speed_rpt_type {
 #define CFG_ENABLE_SELF_RECOVERY                   "gEnableSelfRecovery"
 #define CFG_ENABLE_SELF_RECOVERY_MIN               (0)
 #define CFG_ENABLE_SELF_RECOVERY_MAX               (1)
+//Guotian.Wu@PSW.CN.WiFi.Basic.Crash.1340840, 2018/10/24,
+//Add for enable Self Recovery for crash in release version
+#ifndef VENDOR_EDIT
 #define CFG_ENABLE_SELF_RECOVERY_DEFAULT           (0)
+#else
+#ifndef ENABLE_SELFRECORVERY
+#define CFG_ENABLE_SELF_RECOVERY_DEFAULT           (0)
+#else
+#define CFG_ENABLE_SELF_RECOVERY_DEFAULT           (1)
+#endif  /*ENABLE_SELFRECORVERY */
+#endif  /* VENDOR_EDIT */
 
 #define CFG_ENABLE_SAP_SUSPEND                     "gEnableSapSuspend"
 #define CFG_ENABLE_SAP_SUSPEND_MIN                 (0)
@@ -11048,7 +11070,13 @@ enum dot11p_mode {
 #define CFG_RX_WAKELOCK_TIMEOUT_NAME     "rx_wakelock_timeout"
 #define CFG_RX_WAKELOCK_TIMEOUT_DEFAULT  (50)
 #define CFG_RX_WAKELOCK_TIMEOUT_MIN      (0)
+#ifndef VENDOR_EDIT
+//Yuan.Huang@PSW.CN.WiFi.Network.internet.1064218, 2016/08/04,
+//Modify for QQ message delays when DUT is asleep
 #define CFG_RX_WAKELOCK_TIMEOUT_MAX      (100)
+#else
+#define CFG_RX_WAKELOCK_TIMEOUT_MAX      (300)
+#endif /* VENDOR_EDIT */
 
 /*
  * <ini>

@@ -2859,6 +2859,7 @@ int hdd_softap_set_channel_change(struct net_device *dev, int target_channel,
 	struct hdd_adapter *sta_adapter;
 	struct hdd_station_ctx *sta_ctx;
 	bool is_p2p_go_session = false;
+	struct wlan_objmgr_vdev *vdev;
 
 	hdd_ctx = WLAN_HDD_GET_CTX(adapter);
 	ret = wlan_hdd_validate_context(hdd_ctx);
@@ -2960,6 +2961,17 @@ int hdd_softap_set_channel_change(struct net_device *dev, int target_channel,
 	/*
 	 * Post the Channel Change request to SAP.
 	 */
+
+	vdev = hdd_objmgr_get_vdev(adapter);
+	if (!vdev) {
+		qdf_atomic_set(&adapter->ch_switch_in_progress, 0);
+		wlan_hdd_enable_roaming(adapter);
+		return -EINVAL;
+	}
+	if (wlan_vdev_mlme_get_opmode(vdev) == QDF_P2P_GO_MODE)
+		is_p2p_go_session = true;
+	hdd_objmgr_put_vdev(vdev);
+
 	status = wlansap_set_channel_change_with_csa(
 		WLAN_HDD_GET_SAP_CTX_PTR(adapter),
 		(uint32_t)target_channel,
@@ -3051,7 +3063,8 @@ void wlan_hdd_set_sap_csa_reason(struct wlan_objmgr_psoc *psoc, uint8_t vdev_id,
 		return;
 	}
 	sap_ctx = WLAN_HDD_GET_SAP_CTX_PTR(ap_adapter);
-	sap_ctx->csa_reason = reason;
+	if (sap_ctx)
+		sap_ctx->csa_reason = reason;
 }
 
 QDF_STATUS wlan_hdd_get_channel_for_sap_restart(
@@ -3150,7 +3163,8 @@ sap_restart:
 		 hdd_ap_ctx->sap_config.channel, intf_ch);
 	ch_params.ch_width = CH_WIDTH_MAX;
 	hdd_ap_ctx->bss_stop_reason = BSS_STOP_DUE_TO_MCC_SCC_SWITCH;
-	hdd_ap_ctx->sap_context->csa_reason =
+	if (hdd_ap_ctx->sap_context)
+		hdd_ap_ctx->sap_context->csa_reason =
 			CSA_REASON_CONCURRENT_STA_CHANGED_CHANNEL;
 
 	wlan_reg_set_channel_params(hdd_ctx->pdev,
@@ -4622,6 +4636,113 @@ int __iw_softap_modify_acl(struct net_device *dev,
 	return ret;
 }
 
+#ifdef VENDOR_EDIT
+//Xiao.Liang@PSW.CN.WiFi.Basic.Softap.1190360, 2018/12/13
+//Add for: hotspot management
+static
+int __oppo_iw_softap_modify_acl(struct net_device *dev,
+			   struct iw_request_info *info,
+			   union iwreq_data *wrqu, char *extra)
+{
+	struct hdd_adapter *adapter = (netdev_priv(dev));
+	uint8_t *value = (uint8_t *) extra;
+	uint8_t pPeerStaMac[QDF_MAC_ADDR_SIZE];
+	int listType, cmd, i;
+	int ret;
+	QDF_STATUS qdf_status = QDF_STATUS_SUCCESS;
+	struct hdd_context *hdd_ctx;
+
+	hdd_enter_dev(dev);
+
+	hdd_ctx = WLAN_HDD_GET_CTX(adapter);
+	ret = wlan_hdd_validate_context(hdd_ctx);
+	if (0 != ret)
+		return ret;
+
+	for (i = 0; i < QDF_MAC_ADDR_SIZE; i++)
+		pPeerStaMac[i] = *(value + i);
+
+	listType = (int)(*(value + i));
+	i++;
+	cmd = (int)(*(value + i));
+
+	hdd_debug("Modify ACL mac:" MAC_ADDRESS_STR " type: %d cmd: %d",
+	       MAC_ADDR_ARRAY(pPeerStaMac), listType, cmd);
+
+	qdf_status = wlansap_modify_acl(
+		WLAN_HDD_GET_SAP_CTX_PTR(adapter),
+		pPeerStaMac, (eSapACLType) listType, (eSapACLCmdType) cmd);
+	if (!QDF_IS_STATUS_SUCCESS(qdf_status)) {
+		hdd_err("Modify ACL failed");
+		ret = -EIO;
+	}
+	hdd_exit();
+	return ret;
+}
+
+int
+static __oppo_iw_softap_setparam(struct net_device *dev,
+			    struct iw_request_info *info,
+			    union iwreq_data *wrqu, char *extra)
+{
+	struct hdd_adapter *adapter = (netdev_priv(dev));
+	mac_handle_t mac_handle;
+	int *value = (int *)extra;
+	int sub_cmd = value[0];
+	int set_value = value[1];
+	QDF_STATUS status;
+	int ret = 0;
+	struct hdd_context *hdd_ctx;
+
+	hdd_enter_dev(dev);
+
+	hdd_ctx = WLAN_HDD_GET_CTX(adapter);
+	ret = wlan_hdd_validate_context(hdd_ctx);
+	if (0 != ret)
+		return -EINVAL;
+
+	mac_handle = hdd_ctx->mac_handle;
+	if (!mac_handle) {
+		hdd_err("mac handle is null");
+		return -EINVAL;
+	}
+
+	switch (sub_cmd) {
+	case QCSAP_PARAM_MAX_ASSOC:
+		if (WNI_CFG_ASSOC_STA_LIMIT_STAMIN > set_value) {
+			hdd_err("Invalid setMaxAssoc value %d",
+			       set_value);
+			ret = -EINVAL;
+		} else {
+			if (WNI_CFG_ASSOC_STA_LIMIT_STAMAX < set_value) {
+				hdd_warn("setMaxAssoc %d > max allowed %d.",
+				       set_value,
+				       WNI_CFG_ASSOC_STA_LIMIT_STAMAX);
+				hdd_warn("Setting it to max allowed and continuing");
+				set_value = WNI_CFG_ASSOC_STA_LIMIT_STAMAX;
+			}
+			status = sme_cfg_set_int(mac_handle,
+						 WNI_CFG_ASSOC_STA_LIMIT,
+						 set_value);
+			if (status != QDF_STATUS_SUCCESS) {
+				hdd_err("setMaxAssoc failure, status: %d",
+				       status);
+				ret = -EIO;
+			}
+		}
+		break;
+
+	default:
+		hdd_err("Invalid setparam command %d value %d",
+		       sub_cmd, set_value);
+		ret = -EINVAL;
+		break;
+	}
+	hdd_exit();
+	return ret;
+}
+#endif /* VENDOR_EDIT */
+
 static
 int iw_softap_modify_acl(struct net_device *dev,
 			 struct iw_request_info *info,
@@ -4635,6 +4756,32 @@ int iw_softap_modify_acl(struct net_device *dev,
 
 	return ret;
 }
+
+#ifdef VENDOR_EDIT
+//Laixin@PSW.CN.WiFi.Basic.Softap.1190360, 2018/03/06
+//Add for: hotspot manager
+int oppo_wlan_hdd_modify_acl(struct net_device *dev, char *extra)
+{
+	int ret;
+
+	cds_ssr_protect(__func__);
+	ret = __oppo_iw_softap_modify_acl(dev, NULL, NULL, extra);
+	cds_ssr_unprotect(__func__);
+
+	return ret;
+}
+
+int oppo_wlan_hdd_set_max_assoc(struct net_device *dev, char* extra)
+{
+	int ret;
+
+	cds_ssr_protect(__func__);
+	ret = __oppo_iw_softap_setparam(dev, NULL, NULL, extra);
+	cds_ssr_unprotect(__func__);
+
+	return ret;
+}
+#endif /* VENDOR_EDIT */
 
 int
 static __iw_softap_getchannel(struct net_device *dev,

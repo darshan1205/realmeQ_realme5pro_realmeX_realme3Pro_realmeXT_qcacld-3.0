@@ -2700,10 +2700,8 @@ void wlansap_cleanup_cac_timer(struct sap_context *sap_ctx)
 	}
 }
 
-static bool
-wlansap_is_channel_present_in_acs_list(uint8_t ch,
-				       uint8_t *ch_list,
-				       uint8_t ch_count)
+static bool wlansap_is_channel_present_in_acs_list(uint8_t ch, uint8_t *ch_list,
+						   uint8_t ch_count)
 {
 	uint8_t i;
 
@@ -2730,7 +2728,8 @@ QDF_STATUS wlansap_filter_ch_based_acs(struct sap_context *sap_ctx,
 	size_t target_ch_cnt = 0;
 
 	if (!sap_ctx || !ch_list || !ch_cnt ||
-	    !sap_ctx->acs_cfg->master_ch_list) {
+	    !sap_ctx->acs_cfg->master_ch_list ||
+	    !sap_ctx->acs_cfg->master_ch_list_count) {
 		QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_ERROR,
 			  FL("NULL parameters"));
 		return QDF_STATUS_E_FAULT;
